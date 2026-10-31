@@ -5,7 +5,7 @@
 
 ## 실행
 
-저장소 루트에서 Python 3.10 이상으로 실행합니다. 추가 패키지 설치는 없습니다.
+저장소 루트에서 Python 3.10 이상으로 실행합니다. 규칙 해석만 쓰면 추가 패키지 설치는 없습니다.
 
 ```bash
 python3 web-dashboard/serve.py
@@ -38,20 +38,22 @@ http://localhost:8000 에서 실행합니다. 정적 서버만 사용하면 숫�
 성향을 명시하면 프리셋의 6개 값이 먼저 적용되고, 개별 숫자가 뒤에 적용됩니다.
 제외 품목은 기본 설정과 이번 요청의 합집합입니다. 설정 창에서 기본 제외를 해제할 수 있습니다.
 
-자유 문장 해석은 사용자가 선택한 호환 API 제공사를 서버 환경변수로 설정한 뒤 사용합니다.
-키는 브라우저나 Git에 저장하지 않습니다. 공급사별 무료 제공량과 비용은 직접 설정한 계정에 따릅니다.
+자유 문장 해석은 서버 환경변수에 키를 넣은 뒤 사용합니다. 키는 브라우저나 Git에 저장하지 않습니다.
+
+- Claude: `ANTHROPIC_API_KEY` (모델 기본 `claude-opus-5-5`, `POLICY_CLAUDE_MODEL`로 변경). `pip install -r api/requirements.txt` 필요.
+- 그 밖의 호환 API: `POLICY_API_URL`, `POLICY_API_MODEL`, `POLICY_API_KEY`. 두 가지가 다 있으면 Claude를 씁니다.
 
 ```bash
-export POLICY_API_URL='https://YOUR_PROVIDER/CHAT_COMPLETIONS_PATH'
-export POLICY_API_MODEL='YOUR_MODEL'
-read -s POLICY_API_KEY
-export POLICY_API_KEY
-python3 web-dashboard/serve.py
+pip install -r api/requirements.txt
+echo 'ANTHROPIC_API_KEY=...' >> .env     # 저장소 최상위. .gitignore 대상
+python3 web-dashboard/serve.py           # .env를 읽음. 다른 위치면 --env-file <경로>
 ```
 
-설정 → 기본 성향 → ‘자유 문장 해석 사용’을 켭니다. 기본 성향과 이번 요청 모두 같은 해석 모드를 사용합니다.
+Vercel 배포에서는 프로젝트 환경변수 `ANTHROPIC_API_KEY`를 쓰고, 같은 해석을 `api/policy.py`가 맡습니다.
+서버에 키가 있으면 저장한 설정이 없는 사용자는 ‘자유 문장 해석 사용’이 켜진 상태로 시작하고, 설정 창에 연결된 제공사가 표시됩니다.
+기본 성향과 이번 요청 모두 같은 해석 모드를 사용합니다. 끄면 규칙 해석기를 씁니다.
 외부 API에는 입력 문장과 매장·식자재 이름/ID가 전송됩니다. 재고·판매 원본은 전송하지 않습니다.
-API가 실패하면 요청 적용을 중단합니다. API 실호출은 제공사 키가 없어 검증하지 않았습니다.
+API가 실패하거나 거절하면 요청 적용을 중단합니다. Claude 실호출은 예문 5개로 확인했고, 호환 API 실호출은 검증하지 않았습니다.
 
 ## 계산
 

@@ -1,6 +1,10 @@
+import importlib.util
+import json
 import unittest
+from types import SimpleNamespace
 
-from order_policy import compile_policy, assess_candidate, rank_candidates, CompatibleAPIExtractor
+from order_policy import compile_policy, assess_candidate, rank_candidates, CompatibleAPIExtractor, ClaudeExtractor
+from order_policy.claude_extract import output_schema
 from order_policy.extract import money_won
 from order_policy.policy import empirical_cvar
 
@@ -120,6 +124,51 @@ class PolicyTests(unittest.TestCase):
             return {"choices":[{"message":{"content":json.dumps(result)}}]}
         p=compile_policy("", "수요 20% 감소",extractor=CompatibleAPIExtractor(transport=fake))
         self.assertEqual(p["status"],"needs_clarification")
+
+
+class FakeClaude:
+    """beta.messages.create 인자를 기록하고 정해진 응답을 돌려준다."""
+    def __init__(self, result, stop_reason="end_turn"):
+        self.calls=[]
+        blocks=[SimpleNamespace(type="thinking", thinking=""), SimpleNamespace(type="text", text=json.dumps(result, ensure_ascii=False))]
+        self.response=SimpleNamespace(stop_reason=stop_reason, content=blocks)
+        self.beta=SimpleNamespace(messages=SimpleNamespace(create=self.create))
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.response
+
+
+class ClaudeExtractorTests(unittest.TestCase):
+    def test_schema_covers_every_field(self):
+        from order_policy.policy import FIELDS
+        variants=output_schema()["properties"]["changes"]["items"]["anyOf"]
+        self.assertEqual(sorted(f for v in variants for f in v["properties"]["field"]["enum"]), sorted(FIELDS))
+
+    @unittest.skipUnless(importlib.util.find_spec("anthropic"), "anthropic 미설치")
+    def test_request_shape_and_validation(self):
+        text="안전하게, 20만원 미만, 우유는 빼줘"
+        fake=FakeClaude(dict(changes=[dict(field="mode", value="safe", evidence="안전하게"),
+                                      dict(field="budget", value=dict(won=200000, operator="lt"), evidence="20만원 미만"),
+                                      dict(field="excluded_ingredient_ids", value=["I016"], evidence="우유는 빼줘")],
+                             issues=[], warnings=[]))
+        p=compile_policy("", text, catalog=CAT, extractor=ClaudeExtractor(client=fake))
+        self.assertEqual(p["status"],"ready",p["issues"])
+        self.assertEqual(p["mode"],"safe")
+        self.assertEqual(p["constraints"]["budget"],dict(won=200000, operator="lt"))
+        self.assertEqual(p["constraints"]["excluded_ingredient_ids"],["I016"])
+        call=fake.calls[0]
+        self.assertEqual(call["messages"],[dict(role="user", content=text)])
+        self.assertIn("우유", call["system"][0]["text"])
+        self.assertEqual(call["output_config"]["format"]["type"],"json_schema")
+        self.assertEqual((call["betas"], call["fallbacks"]),(["server-side-fallback-2026-07-01"],"default"))
+
+    @unittest.skipUnless(importlib.util.find_spec("anthropic"), "anthropic 미설치")
+    def test_refusal_truncation_and_invented_number_block(self):
+        invented=dict(changes=[dict(field="budget", value=dict(won=300000, operator="le"), evidence="20만원 이하")], issues=[], warnings=[])
+        for fake in (FakeClaude({}, "refusal"), FakeClaude({}, "max_tokens"), FakeClaude(invented)):
+            p=compile_policy("", "20만원 이하", extractor=ClaudeExtractor(client=fake))
+            self.assertEqual(p["status"],"needs_clarification")
 
 
 if __name__ == "__main__":

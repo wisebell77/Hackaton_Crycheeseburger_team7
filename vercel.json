@@ -1,0 +1,8 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "outputDirectory": "web-dashboard/dist",
+  "functions": {
+    "api/policy.py": { "maxDuration": 60 }
+  }
+}

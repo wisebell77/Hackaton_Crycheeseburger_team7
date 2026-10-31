@@ -7,6 +7,8 @@
 | 경로 | 내용 |
 |---|---|
 | `web-dashboard/dist/` | 배포용 정적 웹 (빌드 없음). `app.js` 화면, `engine-core.js` 발주 엔진, `*.json` 가공 데이터 |
+| `web-dashboard/serve.py`, `policy_api.py` | 로컬 서버와 자연어 요청 해석(`/api/policy`) 공통 처리 |
+| `api/policy.py` | Vercel 서버리스 함수. 배포 주소의 `/api/policy` |
 | `web-dashboard/scripts/` | 가공 데이터 재생성(Python)과 Node 검증 테스트 |
 | `model/src/` | Python 엔진: 수요 예측, 식자재 소요량, 안전재고 σ, 재고 전개, 발주 추천, 발주안 평가 |
 | `model/promotion_forecast/` | 행사(할인·특이사항) 반응을 반영한 수요 예측 |
@@ -19,9 +21,18 @@
 python3 web-dashboard/serve.py
 ```
 
-http://localhost:8000 에서 실행합니다. 기본 시작일은 9/30입니다. 자연어 해석은 Python 로컬 서버에서 실행되며 추가 패키지는 필요하지 않습니다. 설정과 이번 발주 요청은 [설정 안내](web-dashboard/SETTINGS.md)를 참고하세요.
+http://localhost:8000 에서 실행합니다. 기본 시작일은 9/30입니다. 설정과 이번 발주 요청은 [설정 안내](web-dashboard/SETTINGS.md)를 참고하세요.
 
-배포는 `web-dashboard/dist` 폴더 전체를 정적 호스팅에 게시하면 됩니다 (빌드 명령 없음, 시작 문서 `index.html`). 일일 기록과 행사 조건은 브라우저 localStorage 에만 저장됩니다.
+자연어 요청은 기본으로 한정 문법 해석기를 쓰며 추가 패키지가 필요 없습니다. Claude로 자유 문장을 해석하려면 `pip install -r api/requirements.txt` 후 저장소 최상위 `.env` 에 `ANTHROPIC_API_KEY=...` 를 넣고 실행합니다 (다른 위치면 `--env-file <경로>`). `.env` 는 Git에 올라가지 않습니다.
+
+## 배포 (Vercel)
+
+저장소 최상위를 Root Directory 로 둡니다. `vercel.json` 이 `web-dashboard/dist` 를 정적 화면으로, `api/policy.py` 를 자연어 해석 함수로 배포합니다 (빌드 명령 없음). main 에 푸시하면 자동 배포됩니다.
+
+- Claude 키는 Vercel 프로젝트 Settings → Environment Variables 의 `ANTHROPIC_API_KEY` 에만 넣습니다. 모델을 바꾸려면 `POLICY_CLAUDE_MODEL` (기본 `claude-opus-5-5`).
+- 키가 있으면 처음 방문한 사용자는 '자유 문장 해석'이 켜진 상태로 시작합니다. 같은 사이트 화면에서 보낸 요청만 받습니다.
+- 공개 주소라 누구나 해석 기능을 쓸 수 있으니 Anthropic 콘솔에서 사용 한도를 걸어두세요.
+- `web-dashboard/dist` 만 정적 호스팅에 올려도 화면과 계산은 동작합니다 (자연어 요청 제외). 일일 기록과 행사 조건은 브라우저 localStorage 에만 저장됩니다.
 
 ## 계산 흐름
 
@@ -54,7 +65,7 @@ node web-dashboard/scripts/test-team-forecasts.cjs   # 예측 창·재고 불변
 cd model && python -m pytest tests -q                # 엔진·정책 테스트 (가짜 데이터)
 ```
 
-실데이터 테스트는 `PROMOTION_TEST_DATA=<CSV 폴더>`, `POLICY_TEST_DATA=<CSV 폴더>` 를 지정하면 함께 돕니다.
+실데이터 테스트는 `PROMOTION_TEST_DATA=<CSV 폴더>`, `POLICY_TEST_DATA=<CSV 폴더>` 를 지정하면 함께 돕니다. Claude 추출기 테스트는 `anthropic` 이 설치되어 있을 때 가짜 클라이언트로 돌고, 실제 API는 부르지 않습니다.
 
 ## Python 엔진 단독 실행 (`model/`)
 
@@ -73,3 +84,4 @@ cd model && python -m pytest tests -q                # 엔진·정책 테스트 
 - 품절 손실은 판매가 기준이라 이익이 아니고, 동시에 모자란 재료는 메뉴 단위로 한 번만 셉니다. 발주 금액은 손실에 더하지 않습니다.
 - 지연·부분 입고, 품질 폐기·실사 차이·매장 간 이동, 긴급발주 후보는 미래 계산에 넣지 않았습니다. 다음 발주 이후의 발주는 계획하지 않습니다.
 - CSV 다운로드는 추천 초안이며 실제 공급사로 전송되지 않습니다. 기록은 기기 간 공유되지 않습니다.
+- 자유 문장 해석은 입력 문장과 매장·식자재 이름/ID를 Claude API로 보냅니다 (재고·판매 원본은 보내지 않음). 해석 결과는 원문 근거·숫자 일치·범위 검사를 통과해야 적용되고, 실패하면 요청을 적용하지 않습니다.

@@ -1,18 +1,21 @@
 """Local dashboard and policy extraction. API keys stay in server environment."""
 import argparse
-import json
 import os
-import sys
 from pathlib import Path
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
+import policy_api
+
 ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT.parent / 'model'))
-from order_policy import compile_policy, CompatibleAPIExtractor
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT / 'dist'), **kwargs)
+
+    def do_GET(self):
+        if self.path == '/api/policy':
+            policy_api.reply(self, 200, {'provider': policy_api.provider()}); return
+        super().do_GET()
 
     def do_POST(self):
         if self.path != '/api/policy':
@@ -21,37 +24,22 @@ class Handler(SimpleHTTPRequestHandler):
         host = self.headers.get('Host', '')
         if host not in {f'127.0.0.1:{self.server.server_port}', f'localhost:{self.server.server_port}'} or self.headers.get('Origin') not in (None, 'http://' + host):
             self.send_error(403); return
-        try:
-            size = int(self.headers.get('Content-Length', '0'))
-            if not 0 < size <= 65536:
-                raise ValueError('요청 크기를 확인해주세요.')
-            body = json.loads(self.rfile.read(size))
-            text = body.get('text', '')
-            if not isinstance(text, str) or len(text) > 2000:
-                raise ValueError('요청은 2,000자 이내로 입력해주세요.')
-            data = json.loads((ROOT / 'dist/data.json').read_text())
-            catalog = {'stores': {x['store_id']: x['store_name'] for x in data['stores']},
-                       'ingredients': {x['ingredient_id']: x['ingredient_name'] for x in next(iter(data['snapshots'].values()))}}
-            use_api = body.get('api') is True
-            if use_api and not os.getenv('POLICY_API_URL'):
-                raise ValueError('자유 문장 모드에는 서버의 POLICY_API_URL, POLICY_API_MODEL, POLICY_API_KEY 설정이 필요합니다.')
-            result = compile_policy(order_text=text, catalog=catalog,
-                                    extractor=CompatibleAPIExtractor() if use_api else None)
-            self.reply(200, result)
-        except (ValueError, TypeError, KeyError) as e:
-            self.reply(400, {'error': str(e)})
+        policy_api.reply(self, *policy_api.handle(self.headers, self.rfile))
 
-    def reply(self, status, value):
-        payload = json.dumps(value, ensure_ascii=False, allow_nan=False).encode()
-        self.send_response(status)
-        self.send_header('Content-Type', 'application/json; charset=utf-8')
-        self.send_header('Cache-Control', 'no-store')
-        self.send_header('Content-Length', str(len(payload)))
-        self.end_headers(); self.wfile.write(payload)
+def load_env(path):
+    """KEY=VALUE 줄만 읽고, 이미 설정된 환경변수는 덮어쓰지 않는다."""
+    if not path.is_file():
+        return
+    for line in path.read_text(encoding='utf-8').splitlines():
+        key, sep, value = line.strip().partition('=')
+        if sep and key and not key.startswith('#'):
+            os.environ.setdefault(key.strip(), value.strip().strip('\'"'))
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser(); p.add_argument('--port', type=int, default=8000)
+    p.add_argument('--env-file', type=Path, default=ROOT.parent / '.env', help='API 키 파일 (Git에 올리지 않음)')
     args = p.parse_args()
+    load_env(args.env_file)
     server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
     print(f'식자재 매니저: http://localhost:{args.port}', flush=True)
     server.serve_forever()
