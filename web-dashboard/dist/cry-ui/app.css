@@ -1,0 +1,59 @@
+/* design/crycheese-minimal-ui 테마(theme.css)를 최신 앱에 맞추는 보정. 화면 표시만 바꾸고 계산·상태는 그대로 둔다. */
+
+/* 배치: 매장·날짜 → 핵심 숫자 → 추천 발주안 → 다른 발주안 → 행사 → 품목 표 */
+.page-heading { display: none; } /* 제목은 상단 메뉴가, 주문 버튼은 추천 발주안 카드가 맡는다 */
+.controls, .snapshot-note { order: 2; }
+.metrics { order: 3; }
+.quick-order { order: 4; }
+#orderPlanSection { order: 5; }
+#promotionSection { order: 6; }
+.inventory-panel { order: 7; }
+.insight { order: 8; }
+.analysis-row { order: 9; }
+
+/* 상단 보조 버튼 */
+.top-right .settings-link { border: 0; background: none; padding: 4px 2px; color: #696458; font-size: 11px; font-weight: 650; }
+.top-right .settings-link:hover { color: #252320; }
+.dataset { border: 1px solid #e9e6df; border-radius: 5px; padding: 3px 7px; background: #fff; }
+
+/* 핵심 숫자. 발주 금액은 바로 아래 추천 발주안 카드에 있다 */
+.metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+#metrics .metric .metric-value { color: #29251e; }
+
+/* 추천 발주안 카드: 디자인의 선택된 발주안 버튼과 같은 노란 강조 */
+.quick-order { margin: 0 0 12px; padding: 16px 18px 12px; background: #fff9e8; border: 1px solid #e1ac17; border-radius: 9px; box-shadow: none; }
+.quick-order:before { display: none; }
+.order-kicker { font-size: 12px; font-weight: 750; color: #302a1d; }
+.order-dot { background: #e1ac17; }
+.quick-top h2 { margin: 6px 0 2px; font-size: 29px; font-weight: 750; letter-spacing: -1px; color: #252320; }
+.quick-top p { margin: 4px 0 0; font-size: 11px; color: #777064; }
+.quick-actions .primary { min-width: 0; padding: 11px 16px; font-size: 12px; }
+.quick-actions .secondary { padding: 10px 13px; font-size: 11px; }
+.request-box { margin-top: 14px; padding-top: 12px; border-top: 1px solid #efe3bf; }
+.request-box label { color: #302a1d; }
+.request-input textarea { background: #fff; border-color: #e9e0c8; }
+.policy-chips span { background: #fff; border-color: #eedda8; color: #62553c; }
+.quick-bottom { margin-top: 4px; }
+
+/* 다른 발주안: 행사 입력과 같은 접힘 상자, 후보는 디자인의 발주안 버튼 모양 */
+#orderPlanSection { padding: 0 14px; margin: 0 0 12px; background: #fff; border: 1px solid #e9e5db; border-radius: 8px; }
+.alternative-plans summary { padding: 13px 0; font-size: 12px; color: #62553c; cursor: pointer; }
+.comparison-grid { gap: 10px; padding-bottom: 12px; }
+.comparison-card { padding: 14px 17px; gap: 8px; border: 1px solid #e4dfd5; border-radius: 8px; background: #fff; }
+.comparison-card:hover { background: #fffdf7; border-color: #d6b659; }
+.comparison-card.is-selected { background: #fff9e8; border-color: #e1ac17; }
+.comparison-card b { font-size: 14px; font-weight: 750; color: #302a1d; }
+.comparison-card strong { font-size: 21px; font-weight: 750; color: #32291a; }
+.comparison-card small { color: #777064; }
+.calculation-note { padding-bottom: 12px; }
+#promotionSection, .inventory-panel { margin-bottom: 16px; }
+#promotionSection > details { margin-top: 0; }
+
+@media (max-width: 650px) {
+  .metrics { gap: 8px; }
+  .metric { padding: 12px 10px; }
+  .metric-value { font-size: 24px; }
+  .quick-order { padding: 14px 14px 10px; }
+  .quick-top h2 { font-size: 24px; }
+  .comparison-grid { grid-template-columns: 1fr; }
+}

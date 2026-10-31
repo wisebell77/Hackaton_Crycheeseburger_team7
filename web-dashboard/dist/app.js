@@ -74,7 +74,7 @@ $('#planningEmpty p').textContent=forecastMissing?'현재 팀 예측은 2026년 
 $('#navCount').textContent=items.filter(i=>i.orderQty>0).length;
 $('#forecastNote').hidden=history||daily||missing;
 if(hasForecast())$('#forecastNote').textContent=`팀 프로모션 수정 모델 · 추가 조건 ${getPromotionPlans().length}건 · 판매 관측 ${forecastWindow().data_through}까지 · ${md(forecastWindow().dates[0])}–${md(forecastWindow().dates.at(-1))} 소요량 · 발주 엔진: 안전재고 + 과거 오차 시나리오 ${ENGINE_PARAMS.scenarios.n}개`;$('#planningRecordBtn').onclick=()=>{state.nav='daily';applyNav()};
-const title={daily:'재고 기록',overview:'대시보드',history:'발주 내역'}[state.nav];
+const title={daily:'일일 재고 기록',overview:'발주 신청',history:'과거 발주 이력'}[state.nav];
 $('#breadcrumb').textContent=title;$('label[for="dateSelect"]').textContent=history?'조회 기준일':'재고 기준일';
 $('#pageTitle').textContent=daily?`${+state.date.slice(5,7)}월 ${+state.date.slice(8,10)}일, 재고 마감 확인`:history?'발주 내역':'오늘의 발주';
 $('#subtitle').textContent=daily?(state.date>DailyLedger.SEED?'':''):history?'':'';
