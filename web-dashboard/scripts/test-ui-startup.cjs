@@ -1,0 +1,13 @@
+/* DOM contract smoke test; no browser/layout assertions. */
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),path=require('node:path');
+const root=path.resolve(__dirname,'../dist'),elements=new Map();
+class Element{
+ constructor(){this.value='';this.hidden=false;this.dataset={};this.classList={toggle(){},add(){},remove(){}};this.firstChild={textContent:''};this.style={};}
+ set innerHTML(v){this.html=v;for(const m of v.matchAll(/id="([^"]+)"/g))if(!elements.has('#'+m[1]))elements.set('#'+m[1],new Element());}
+ get innerHTML(){return this.html||'';} querySelector(){return new Element();}querySelectorAll(){return [];}append(){}after(){}focus(){}scrollIntoView(){}setAttribute(){}showModal(){this.open=true;}close(){this.open=false;}checkValidity(){return true;}
+}
+const get=s=>{if(!elements.has(s))elements.set(s,new Element());return elements.get(s);};
+const errors=[];const sandbox={console:{...console,error:e=>errors.push(e)},setTimeout:()=>0,clearTimeout(){},Intl,URL,Blob,localStorage:{getItem(){return null},setItem(){}},fetch:async f=>({ok:true,json:async()=>JSON.parse(fs.readFileSync(path.join(root,f)))}),document:{querySelector:get,querySelectorAll:()=>[],createElement:()=>new Element(),body:new Element(),addEventListener(){},activeElement:null},window:{scrollTo(){}}};
+vm.createContext(sandbox);
+for(const f of ['model-engine','purchase-history','lot-tracking','daily-inventory','daily-ledger','daily-entry','promotion-engine','promotion-ui','engine-core','policy-engine','settings-ui','app'])vm.runInContext(fs.readFileSync(`${root}/${f}.js`,'utf8'),sandbox,{filename:f+'.js'});
+(async()=>{for(let i=0;i<10;i++)await new Promise(setImmediate);assert.deepEqual(errors,[]);assert.equal(vm.runInContext('items.length',sandbox),22);assert(get('#quickOrder').innerHTML.includes('최적의 안으로 주문'));assert(get('#inventoryBody').innerHTML.includes('data-order-input'));vm.runInContext('openSettings()',sandbox);assert(get('#settingsDialog').innerHTML.includes('기본 성향'));for(const tab of ['parameters','constraints','storage']){vm.runInContext(`settingsTab='${tab}';renderSettings()`,sandbox);assert(get('#settingsDialog').innerHTML.includes('설정'));}vm.runInContext("preferences.preferences.service_level=.97;policyCache='';render()",sandbox);assert.equal(vm.runInContext('effectivePolicy().preferences.service_level',sandbox),.97);vm.runInContext("state.date='2026-10-15';render()",sandbox);assert.equal(get('#optimalOrder').disabled,undefined);assert(get('#quickOrder').innerHTML.includes('disabled'));console.log('PASS: app startup, 22 rows, quick action, 4 settings panels, manual service level, missing-date action guard (DOM contract only)');})().catch(e=>{console.error(e);process.exitCode=1;});

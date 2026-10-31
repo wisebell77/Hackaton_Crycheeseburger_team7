@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "promotions": [
+    {
+      "promotion_id": "PLAN_001",
+      "name": "S02 치즈버거·더블치즈버거 세트 10% 할인",
+      "store_ids": ["S02"],
+      "target_menu_ids": ["M004", "M005"],
+      "start_date": "2026-10-03",
+      "end_date": "2026-10-07",
+      "offer": {"type": "percent_off", "value": 10},
+      "response": {
+        "mode": "manual",
+        "uplift_pct": 30,
+        "reason": "시연용 가정: 할인율로부터 추정한 값이 아닌 사용자가 입력한 예상 수요 증가율"
+      }
+    }
+  ]
+}

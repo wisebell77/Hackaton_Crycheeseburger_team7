@@ -2,7 +2,7 @@
 from pathlib import Path
 from datetime import date,timedelta
 import sys,json,argparse
-p=argparse.ArgumentParser();p.add_argument('--package',type=Path,required=True);p.add_argument('--data',type=Path,required=True);a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--package',type=Path,default=Path(__file__).resolve().parents[2]/'model');p.add_argument('--data',type=Path,required=True);a=p.parse_args()
 sys.path.insert(0,str(a.package.resolve()))
 from promotion_forecast.bootstrap import load_engine
 load_engine(a.package)
