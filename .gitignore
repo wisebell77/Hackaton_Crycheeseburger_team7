@@ -1,0 +1,16 @@
+# 제공 원본 데이터와 실행 산출물은 저장소에 올리지 않는다 (해커톤 이용 조건)
+data/
+*.csv
+*.zip
+*_out/
+
+# 파이썬
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# 비밀·환경
+.env
+.env.*
+.DS_Store
