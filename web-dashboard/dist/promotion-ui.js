@@ -2,8 +2,8 @@ let promotionRecords={},promotionLoadWarning='';
 const promotionKey=()=>state.store+'_'+state.date;
 const getPromotionPlans=()=>promotionRecords[promotionKey()]||[];
 const safeText=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function loadPromotions(){try{const value=JSON.parse(localStorage.getItem('fresh-order-promotions-v1')||'{}');if(!value||Array.isArray(value)||typeof value!=='object')throw Error();promotionRecords=value;}catch{promotionLoadWarning='저장한 행사 조건을 읽지 못했습니다. 다시 입력해주세요.';promotionRecords={};}}
-function savePromotionPlans(plans){const next={...promotionRecords,[promotionKey()]:plans};try{localStorage.setItem('fresh-order-promotions-v1',JSON.stringify(next));}catch{throw Error('브라우저에 저장하지 못했습니다. 저장 공간과 설정을 확인해주세요.');}promotionRecords=next;state.overrides={};render();}
+function loadPromotions(){try{const value=JSON.parse((globalThis.WorkspaceStorage || localStorage).getItem('fresh-order-promotions-v1')||'{}');if(!value||Array.isArray(value)||typeof value!=='object')throw Error();promotionRecords=value;}catch{promotionLoadWarning='저장한 행사 조건을 읽지 못했습니다. 다시 입력해주세요.';promotionRecords={};}}
+function savePromotionPlans(plans){const next={...promotionRecords,[promotionKey()]:plans};try{(globalThis.WorkspaceStorage || localStorage).setItem('fresh-order-promotions-v1',JSON.stringify(next));}catch{throw Error('브라우저에 저장하지 못했습니다. 저장 공간과 설정을 확인해주세요.');}promotionRecords=next;state.overrides={};render();}
 function renderPromotions(){
  const root=$('#promotionSection'),w=forecastWindow(),plans=getPromotionPlans(),pw=PROMO.windows[state.date];if(!w||!pw)return;
  const ref=pw.references.find(r=>r.store===state.store&&!r.error),name=id=>{const m=PROMO.menus.find(m=>m.menu_id===id);return m?`${m.menu_name} [${m.is_set?'세트':'단품'} / ${id}]`:id;};

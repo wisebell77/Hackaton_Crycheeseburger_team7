@@ -39,7 +39,7 @@ function buildRecord(data,records,store,ds,inputs){
  });
  return {date:ds,store,source:'manager',savedAt:new Date().toISOString(),scenario:ds>today()||prepared.some(i=>i.scenario),allocation:'FIFO estimate; consumption includes count differences',items:prepared};
 }
-function load(){const raw=localStorage.getItem(KEY);if(!raw)return {};const parsed=JSON.parse(raw);if(parsed.version!==1||typeof parsed.records!=='object'||!parsed.records)throw Error('저장 형식을 확인할 수 없습니다.');return parsed.records;}
-function save(records){localStorage.setItem(KEY,JSON.stringify({version:1,records}));}
+function load(){const raw=(globalThis.WorkspaceStorage || localStorage).getItem(KEY);if(!raw)return {};const parsed=JSON.parse(raw);if(parsed.version!==1||typeof parsed.records!=='object'||!parsed.records)throw Error('저장 형식을 확인할 수 없습니다.');return parsed.records;}
+function save(records){(globalThis.WorkspaceStorage || localStorage).setItem(KEY,JSON.stringify({version:1,records}));}
 globalThis.DailyLedger={SEED,KEY,nextDate,previousSnapshot,projectForecast,trackLots,today,buildRecord,load,save};
 })();
