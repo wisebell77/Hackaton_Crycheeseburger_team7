@@ -21,8 +21,25 @@
 .tutorial-practice { position:fixed; top:8px; left:50%; transform:translateX(-50%); z-index:10010; display:flex; align-items:center; gap:12px; padding:7px 12px; border:1px solid #dfbd57; border-radius:30px; background:#fff5d5; color:#5e4810; box-shadow:0 2px 12px #21170012; font-size:11px; white-space:nowrap; }
 .tutorial-practice button { background:none; border:0; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer; }
 .tutorial-layer { position:fixed; inset:0; z-index:10020; pointer-events:none; color:#29251e; font-family:inherit; }
-.tutorial-spotlight { position:fixed; border:2px solid #e6aa10; border-radius:10px; box-shadow:0 0 0 9999px #1f1b1457,0 0 0 5px #fff2bd90; pointer-events:none; transition:top .16s,left .16s,width .16s,height .16s; }
-.tutorial-card { position:fixed; width:350px; max-width:calc(100vw - 24px); max-height:calc(100dvh - 80px); overflow:auto; box-sizing:border-box; padding:19px 20px 16px; background:#fff; border:1px solid #e6dece; border-radius:13px; box-shadow:0 14px 50px #211b1833; pointer-events:auto; text-align:left; }
+.tutorial-spotlight { position:fixed; border:2px solid #e6aa10; border-radius:10px; box-shadow:0 0 0 9999px #1f1b1457,0 0 0 5px #fff2bd90; pointer-events:none; transition:top .26s ease-in-out,left .26s ease-in-out,width .26s ease-in-out,height .26s ease-in-out,opacity .14s ease; }
+.tutorial-spotlight.is-muted { opacity:0; }
+.tutorial-spotlight.is-tracking { transition:opacity .14s ease; }
+.tutorial-spotlight.is-relocating { transition:none; }
+.tutorial-card { position:fixed; width:350px; max-width:calc(100vw - 24px); max-height:calc(100dvh - 80px); overflow:auto; box-sizing:border-box; padding:19px 20px 16px; background:#fff; border:1px solid #e6dece; border-radius:13px; box-shadow:0 14px 50px #211b1833; pointer-events:auto; text-align:left; transition:opacity .16s ease,transform .16s ease; }
+.tutorial-card.is-leaving { opacity:0;transform:translateY(-5px);pointer-events:none; }
+.tutorial-card.is-arriving { opacity:0;transform:translateY(6px);pointer-events:none; }
+.tutorial-card:has(.tutorial-content) { display:flex;flex-direction:column;overflow:hidden; }
+.tutorial-content { flex:0 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain; }
+.tutorial-card-head,.tutorial-card progress,.tutorial-location,.tutorial-chapters,.tutorial-actions { flex-shrink:0; }
+.tutorial-journey { position:fixed; top:100px; left:50%; transform:translateX(-50%); z-index:10025; pointer-events:none; width:max-content; max-width:calc(100% - 32px); box-sizing:border-box; padding:12px 18px; border:1px solid #e3ce91; border-radius:10px; background:#fffdf6f5; box-shadow:0 6px 24px #211b181f; text-align:center; color:#514326; }
+.tutorial-journey[hidden] { display:none; }
+.tutorial-journey b { display:block;font-size:14px;line-height:1.5; }
+.tutorial-journey span { display:block;margin-top:4px;color:#8b7952;font-size:11px;line-height:1.5; }
+.tutorial-location { display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px;margin:10px 0;padding:8px 9px;border-radius:6px;background:#faf6eb;font-size:11px;line-height:1.5;color:#746747; }
+.tutorial-location span[aria-current] { color:#4e3911;font-weight:750; }
+.tutorial-location i { font-style:normal;color:#b9a77a; }
+.tutorial-moved { flex-basis:100%;padding-bottom:5px;margin-bottom:1px;border-bottom:1px solid #eee4cc;color:#7a5a12;font-weight:700; }
+.tutorial-nav-cue { outline:3px solid #e6aa10!important;outline-offset:3px;box-shadow:0 0 0 6px #f8b81c29!important;transition:outline-color .18s ease,box-shadow .18s ease; }
 .tutorial-card-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
 .tutorial-card-head span { font-size:11px; font-weight:700; color:#8a6b24; }
 .tutorial-card h2 { margin:8px 0 9px; font-size:19px; line-height:1.4; letter-spacing:-.5px; color:#29251e; }
@@ -58,6 +75,9 @@ body.tutorial-active .settings-dialog { overflow:visible; }
   .tutorial-card p { font-size:12px; line-height:1.65; }
   .tutorial-card .tutorial-hint { font-size:11px; margin:7px 0; }
   .tutorial-practice { top:4px; font-size:10px; gap:8px; padding:5px 9px; }
+  .tutorial-journey { top:auto;bottom:16px;padding:10px 13px; }
+  .tutorial-journey b { font-size:13px; }
+  .tutorial-location { margin:7px 0;padding:6px 8px;font-size:10px; }
   body.tutorial-active .settings-dialog,body.tutorial-active #methodDialog { position:fixed; top:43px; margin:0 auto; max-height:48dvh; }
   body.tutorial-active .settings-layout { min-height:0; }
   body.tutorial-active .settings-content { max-height:24dvh; }
@@ -65,4 +85,7 @@ body.tutorial-active .settings-dialog { overflow:visible; }
   body.tutorial-active .settings-footer { padding:9px 15px; }
   body.tutorial-active #methodDialog .method-body { max-height:calc(48dvh - 90px); overflow:auto; }
 }
-@media(prefers-reduced-motion:reduce) { .tutorial-spotlight { transition:none; } }
+@media(prefers-reduced-motion:reduce) {
+  .tutorial-spotlight,.tutorial-card,.tutorial-nav-cue { transition:none!important; }
+  .tutorial-card.is-arriving,.tutorial-card.is-leaving { transform:none; }
+}

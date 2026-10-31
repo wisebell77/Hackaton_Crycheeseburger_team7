@@ -5,27 +5,39 @@
   const chapters = ['발주 살펴보기', '설정과 요청', '행사와 발주서', '재고 마감', '이력과 기준'];
   const copy = value => JSON.parse(JSON.stringify(value));
   const q = selector => document.querySelector(selector);
-  let available = false, active = false, index = 0, snapshot = null, layer, banner, welcome;
+  let available = false, active = false, index = 0, snapshot = null, layer, banner, welcome, journey;
   let frame = 0, moving = false, transition = 0, actionBusy = false, previouslyFocused, actionTarget = null;
+  let currentPlace=null, completion=false;
+  const reduced=()=>window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const alive=token=>active&&token===transition;
+  const pause=(ms,token)=>new Promise(resolve=>setTimeout(()=>resolve(alive(token)),reduced()?0:ms));
   const readProgress = () => { try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch { return {}; } };
   function remember(values) { try { localStorage.setItem(KEY, JSON.stringify({...readProgress(), ...values})); } catch { /* Tour also works without browser storage. */ } }
 
   function closeSurfaces() {
     // Move the guide out before renderSettings replaces the dialog's children.
+    const position={left:window.scrollX,top:window.scrollY},restoreFocus=focusBefore;
     if (layer) document.body.append(layer);
     document.querySelectorAll('dialog[open]').forEach(d => { if (d !== welcome) d.close(); });
-    if (q('#drawer') && !q('#drawer').hidden) closeDrawer();
+    if (q('#drawer') && !q('#drawer').hidden) { if(moving)focusBefore=null;closeDrawer();focusBefore=restoreFocus; }
+    if(moving)window.scrollTo({...position,behavior:'instant'});
   }
-  function overview() { closeSurfaces(); state.nav = 'overview'; state.date = DailyLedger.SEED; state.filter = 'all'; state.search = ''; q('#dateSelect').value = state.date; q('#search').value = ''; render(); }
+  function overview() {
+    const changed=state.nav!=='overview'||state.date!==DailyLedger.SEED||state.filter!=='all'||state.search!=='';
+    closeSurfaces(); state.nav='overview';state.date=DailyLedger.SEED;state.filter='all';state.search='';q('#dateSelect').value=state.date;q('#search').value='';
+    if(changed||!items.length)render();
+  }
   function settings(tab) {
     if (layer) document.body.append(layer);
     if (!q('#settingsDialog')?.open) { closeSurfaces(); openSettings(); }
     else { try { collectSettings(); } catch { /* Explain invalid fields without blocking navigation. */ } }
     settingsTab = tab; renderSettings();
   }
-  function daily(ds = DailyLedger.SEED) { closeSurfaces(); state.nav = 'daily'; state.date = ds; state.filter = 'all'; state.search = ''; q('#dateSelect').value = ds; render(); }
+  function daily(ds = DailyLedger.SEED) { const changed=state.nav!=='daily'||state.date!==ds;closeSurfaces();state.nav='daily';state.date=ds;state.filter='all';state.search='';q('#dateSelect').value=ds;if(changed)render(); }
   async function history() {
+    const changed=state.nav!=='history'||state.date!==DailyLedger.SEED;
     closeSurfaces(); state.nav = 'history'; state.date = DailyLedger.SEED; q('#dateSelect').value = state.date;
+    if(!changed&&historyData)return;
     Object.assign(historyState, {from:'2026-09-01',to:'2026-09-30',supplier:'all',ingredient:'all',status:'all',type:'all',query:'',page:1});
     render(); await renderPurchaseHistory();
   }
@@ -81,12 +93,136 @@
     makeStep(4, '데이터와 계산 가정을 확인합니다', '데이터 기준에는 관측 기간, 예측식, 단위, 발주 조건과 계산 범위가 정리되어 있습니다. 제공 자료는 합성 데이터이고 가격은 가상 값입니다. 판매 관측은 9월 30일까지이며, 발주 예측은 10월 14일 기준일까지 준비되어 있습니다.', '#methodDialog h2', () => { overview(); q('#methodDialog').showModal(); }, {hint:'실제 공급사 주문 전송과 기기 간 기록 공유는 지원하지 않습니다. 실제 발주 결정은 담당자가 내립니다.'})
   ];
 
+  const pageNames={overview:'발주 신청',daily:'일일 재고 기록',history:'과거 발주 이력'};
+  const place=(page,trail,surface='page',tab=null,date=null)=>({page,trail,surface,tab,date});
+  const places=[
+    place('overview',['매장과 기준일']),place('overview',['재고 위험 요약']),place('overview',['품목 검색과 필터']),
+    place('overview',['품목 상세','소고기 패티'],'drawer'),place('overview',['재고 추이와 우선 확인 품목']),
+    place('overview',['설정','기본 성향'],'settings','profile'),place('overview',['설정','발주 기준'],'settings','parameters'),
+    place('overview',['설정','한도·제외 품목'],'settings','constraints'),place('overview',['설정','화면·저장'],'settings','storage'),
+    place('overview',['이번 발주 요청']),place('overview',['이번 발주 기준'],'drawer'),place('overview',['다른 발주안']),
+    place('overview',['행사 추가','행사와 대상 메뉴']),place('overview',['행사 추가','예상 수요 반응']),place('overview',['행사·수요 조정','조건 적용']),
+    place('overview',['추천 발주 목록','수량 조정']),place('overview',['발주서 검토','CSV 다운로드'],'drawer'),
+    place('daily',['9월 30일 제공 기록']),place('daily',['품목 상세','입고 묶음과 사용기한'],'drawer'),
+    place('daily',['10월 1일 마감 입력','실제 수량'],'page',null,'2026-10-01'),place('daily',['10월 1일 마감 입력','확인과 저장'],'page',null,'2026-10-01'),
+    place('daily',['기록 수정과 백업']),place('history',['조회 기간과 필터']),place('history',['발주 상세','예정 입고와 실제 입고'],'drawer'),
+    place('history',['조회 결과 내보내기']),place('overview',['데이터 기준','계산 가정'],'method')
+  ];
+  function surfaceKey(p) { return p?[p.page,p.surface,p.tab||'',p.surface==='drawer'?p.trail[0]:'',p.date||''].join('|'):''; }
+  function pathHTML(p) { return [pageNames[p.page],...p.trail].map((name,k)=>'<span'+(k===p.trail.length?' aria-current="location"':'')+'>'+name+'</span>').join('<i aria-hidden="true">›</i>'); }
+  // A move says where the guide is going (shown during the transition) and where it came from (kept on the card).
+  function destinationMove(from,to) {
+    const tab=to.trail.at(-1),move=(kind,now,done,hold)=>({kind,now,done,hold});
+    if(!from)return move('start',pageNames[to.page]+' 화면부터 살펴봅니다','',380);
+    if(from.page!==to.page)return move('page','이제 '+pageNames[to.page]+'으로 이동합니다',pageNames[from.page]+'에서 '+pageNames[to.page]+'으로 이동했습니다',420);
+    if(to.surface==='settings'&&from.surface!=='settings')return move('settings','설정을 열고 '+tab+' 탭으로 이동합니다','설정을 열고 '+tab+' 탭으로 이동했습니다',340);
+    if(to.surface==='settings'&&from.tab!==to.tab)return move('tab','설정의 '+tab+' 탭으로 이동합니다',from.trail.at(-1)+' 탭에서 '+tab+' 탭으로 이동했습니다',300);
+    if(to.surface==='method'&&from.surface!=='method')return move('method','데이터와 계산 기준을 엽니다','데이터와 계산 기준 창을 열었습니다',300);
+    if(to.date&&from.date!==to.date)return move('date','10월 1일 마감 입력으로 이동합니다','9월 30일 기록에서 10월 1일 마감 입력으로 이동했습니다',300);
+    if(to.surface==='drawer'&&surfaceKey(from)!==surfaceKey(to))return move('drawer',to.trail[0]+' 화면을 엽니다',to.trail[0]+' 화면을 열었습니다',240);
+    if(from.surface!=='page'&&to.surface==='page')return move('return',pageNames[to.page]+' 화면으로 돌아갑니다',from.trail[0]+' 화면을 닫고 '+pageNames[to.page]+'으로 돌아왔습니다',240);
+    return null;
+  }
+  function phase(value) { if(layer){layer.dataset.phase=value;layer.setAttribute('aria-busy',String(moving));} }
+  function clearCues() { document.querySelectorAll('.tutorial-nav-cue').forEach(el=>el.classList.remove('tutorial-nav-cue')); }
+  function showJourney(move,p) {
+    if(!journey)return;journey.hidden=!move;if(!move)return;
+    journey.innerHTML='<b>'+move.now+'</b><span>'+[pageNames[p.page],...p.trail].join(' › ')+'</span>';
+  }
+  // Highlight the control a person would press for this move: top menu, settings button, settings tab or data guide.
+  function cueDestination(p,move) {
+    clearCues();if(!move||move.kind==='start')return;
+    const settingsOpen=q('#settingsDialog')?.open;
+    if(move.kind==='page')document.querySelectorAll('[data-nav]').forEach(el=>el.classList.toggle('active',el.dataset.nav===p.page));
+    if(settingsOpen&&p.surface==='settings')document.querySelectorAll('[data-settings-tab]').forEach(el=>el.classList.toggle('active',el.dataset.settingsTab===p.tab));
+    const selector={page:'[data-nav="'+p.page+'"]',settings:settingsOpen?'[data-settings-tab="'+p.tab+'"]':'.settings-link',tab:'[data-settings-tab="'+p.tab+'"]',method:'#methodBtn'}[move.kind];
+    if(selector)document.querySelectorAll(selector).forEach(el=>{if(el.getClientRects().length)el.classList.add('tutorial-nav-cue');});
+  }
+  const nextFrame=()=>new Promise(resolve=>{requestAnimationFrame(()=>requestAnimationFrame(resolve));setTimeout(resolve,150);});
+  function setBusy(value) {
+    if(!layer)return;
+    layer.setAttribute('aria-busy',String(value));
+    layer.querySelectorAll('#tutorialNext,#tutorialPrev,[data-tour-chapter],.tutorial-example').forEach(button=>{
+      button.disabled=value||button.id==='tutorialPrev'&&index===0;
+    });
+  }
+  async function leaveGuide(token,hideSpot=false) {
+    const card=layer?.querySelector('.tutorial-card'),spot=layer?.querySelector('.tutorial-spotlight');
+    setBusy(true);phase('leaving');
+    if(card){card.classList.add('is-leaving');card.inert=true;}
+    if(hideSpot)spot?.classList.add('is-muted');
+    return pause(card?140:0,token);
+  }
+  // Panes that scroll on this axis, innermost first. Inside a dialog or drawer the search stops there, so the page behind stays put.
+  function scrollChain(target,axis) {
+    const surface=target.closest('dialog[open],#drawer'),chain=[],y=axis==='y';
+    for(let parent=target.parentElement;parent&&parent!==document.body;parent=parent.parentElement){
+      const style=getComputedStyle(parent);
+      if(/auto|scroll/.test(y?style.overflowY:style.overflowX)&&(y?parent.scrollHeight>parent.clientHeight+1:parent.scrollWidth>parent.clientWidth+1))chain.push(parent);
+      if(parent===surface)return chain;
+    }
+    return surface?chain:[...chain,document.scrollingElement];
+  }
+  function scrollToTarget(target,token,onFrame) {
+    if(!target)return Promise.resolve(alive(token));
+    const yChain=scrollChain(target,'y'),yRoot=yChain.at(-1),xRoot=scrollChain(target,'x')[0],mobile=innerWidth<=650,vw=document.documentElement.clientWidth;
+    const card=layer?.querySelector('.tutorial-card'),w=card?.offsetWidth||350,h=card?.offsetHeight||320,moves=[];
+    let r=target.getBoundingClientRect();
+    // An inner pane (e.g. the order table) first brings the target into its own view; the outer pane then works from that result.
+    for(const pane of yChain.slice(0,-1)){
+      const box=pane.getBoundingClientRect(),inside=r.top-box.top,room=pane.clientHeight;
+      if(inside>=40&&inside+r.height<=room-8)continue;
+      const top=Math.max(0,Math.min(pane.scrollHeight-room,pane.scrollTop+inside-Math.max(40,(room-r.height)/2))),shift=top-pane.scrollTop;
+      moves.push([pane,pane.scrollLeft,top]);r={top:r.top-shift,bottom:r.bottom-shift,left:r.left,right:r.right,width:r.width,height:r.height};
+    }
+    if(yRoot){
+      // The top menu only takes space while it is on screen (it scrolls away on phones).
+      const pageRoot=yRoot===document.scrollingElement,bounds=pageRoot?{top:Math.max(0,q('.sidebar')?.getBoundingClientRect().bottom??80),bottom:innerHeight}:yRoot.getBoundingClientRect();
+      const top=bounds.top+18,bottom=Math.min(bounds.bottom,innerHeight-(mobile?innerHeight*.48+12:24)),room=Math.max(70,bottom-top);
+      // A wide target leaves no room beside it, so keep space for the guide card underneath.
+      const besideRoom=r.right+18+w<=vw-12||r.left-18-w>=12,stack=mobile||besideRoom?r.height:r.height+18+h;
+      const desiredTop=stack>room?top:top+(room-stack)/2;
+      const cardFits=r.bottom+18+h<=innerHeight-12||r.top-18-h>=46;
+      const needsY=r.top<top||r.bottom>bottom||(!mobile&&!besideRoom&&stack<=room&&!cardFits);
+      if(needsY)moves.push([yRoot,yRoot.scrollLeft,yRoot.scrollTop+r.top-desiredTop]);
+    }
+    if(xRoot){
+      const bounds=xRoot===document.scrollingElement?{left:0,right:vw}:xRoot.getBoundingClientRect();let left=xRoot.scrollLeft;
+      if(r.left<bounds.left+8)left+=r.left-bounds.left-8;
+      else if(r.right>bounds.right-8&&r.width<bounds.right-bounds.left)left+=r.right-bounds.right+8;
+      if(left!==xRoot.scrollLeft){const same=moves.find(m=>m[0]===xRoot);if(same)same[1]=left;else moves.push([xRoot,left,xRoot.scrollTop]);}
+    }
+    phase('scrolling');
+    return Promise.all(moves.map(([root,left,top])=>TutorialMotion.scrollTo(root,left,top,{reduced:reduced(),cancelled:()=>!alive(token),onFrame}))).then(()=>alive(token));
+  }
+  async function revealGuide(token,oldRect,sameSurface,oldSelector) {
+    if(!alive(token))return false;host();const spot=layer.querySelector('.tutorial-spotlight'),card=layer.querySelector('.tutorial-card'),target=visibleTarget();
+    const connect=TutorialMotion.canConnect(oldRect,target?.getBoundingClientRect(),sameSurface,innerHeight);
+    card.classList.add('is-arriving');card.inert=true;spot?.classList.add('is-tracking');
+    if(!connect){spot?.classList.add('is-muted');if(!await pause(oldRect?100:0,token))return false;}
+    if(!await scrollToTarget(target,token,()=>{
+      if(connect){const old=document.querySelector(oldSelector);if(old?.getClientRects().length)positionSpot(shownRect(old));}
+    }))return false;
+    if(!alive(token))return false;
+    phase('highlighting');spot?.classList.remove('is-tracking');
+    if(!connect)spot?.classList.add('is-relocating');
+    reposition();
+    // Apply new coordinates while hidden before fading in a distant highlight.
+    spot?.getBoundingClientRect();
+    spot?.classList.remove('is-relocating','is-muted');
+    if(!await pause(connect?220:140,token))return false;
+    journey.hidden=true;clearCues();card.classList.remove('is-arriving','is-leaving');card.inert=false;
+    q('#tutorialTitle')?.focus({preventScroll:true});
+    if(!await pause(160,token))return false;
+    phase('reading');return true;
+  }
+
   function capture() {
     return copy({state, preferences, orderPatch, orderRequest, requestDirty, policySelection, managerRecords, promotionRecords, ledgerError, promotionLoadWarning, dailyState, historyState});
   }
   function resetPractice() {
     Object.assign(state,{store:'S01',date:DailyLedger.SEED,filter:'all',search:'',nav:'overview',selected:null,plan:'balanced',overrides:{}});
-    preferences=OrderPolicy.defaults();orderPatch=null;orderRequest='';requestDirty=false;policySelection=null;policyCache='';
+    preferences=OrderPolicy.defaults();orderPatch=null;orderRequest='';requestDirty=false;policySelection=null;policyCache='';items=[];
     managerRecords={};promotionRecords={};ledgerError='';promotionLoadWarning='';Object.assign(dailyState,{filter:'all',query:''});
   }
   function restore() {
@@ -101,16 +237,17 @@
   function finish(completed=false) {
     if(!active)return;active=false;transition++;moving=false;actionBusy=false;cancelAnimationFrame(frame);frame=0;
     remember({offered:true,completed:completed||readProgress().completed,lastStep:Math.min(index,steps.length-1)});
-    restore();layer?.remove();banner?.remove();layer=null;banner=null;document.body.classList.remove('tutorial-active');snapshot=null;
+    clearCues();restore();layer?.remove();banner?.remove();journey?.remove();layer=null;banner=null;journey=null;currentPlace=null;completion=false;document.body.classList.remove('tutorial-active');snapshot=null;
     previouslyFocused?.isConnected?previouslyFocused.focus():q('#tutorialLaunch')?.focus();
     toast(completed?'튜토리얼을 마쳤습니다. 원래 화면으로 돌아왔습니다.':'튜토리얼을 닫고 원래 화면으로 돌아왔습니다.');
   }
   function start(at=0) {
     if(!available||active)return;previouslyFocused=document.activeElement;snapshot=capture();welcome?.close();closeSurfaces();
     WorkspaceStorage.beginPractice();resetPractice();active=true;document.body.classList.add('tutorial-active');
-    layer=document.createElement('div');layer.id='tutorialLayer';layer.className='tutorial-layer';
+    layer=document.createElement('div');layer.id='tutorialLayer';layer.className='tutorial-layer';currentPlace=null;completion=false;
+    journey=document.createElement('div');journey.id='tutorialJourney';journey.className='tutorial-journey';journey.setAttribute('role','status');journey.setAttribute('aria-live','polite');journey.hidden=true;
     banner=document.createElement('div');banner.className='tutorial-practice';banner.innerHTML='<b>튜토리얼 연습 중</b><span>원래 기록은 유지됩니다</span><button type="button">끝내기</button>';
-    banner.querySelector('button').onclick=()=>finish();document.body.append(banner,layer);
+    banner.querySelector('button').onclick=()=>finish();document.body.append(banner,journey,layer);
     remember({offered:true});showStep(Math.max(0,Math.min(at,steps.length-1)));
   }
   function host() {
@@ -119,28 +256,50 @@
     if(layer?.parentElement!==parent)parent.append(layer);
     // The banner must share the dialog's top layer to remain visible and interactive.
     if(banner?.parentElement!==parent)parent.append(banner);
+    if(journey?.parentElement!==parent)parent.append(journey);
   }
-  function renderCard(step) {
-    layer.innerHTML='<div class="tutorial-spotlight" aria-hidden="true"></div><section class="tutorial-card" role="region" aria-label="튜토리얼 안내"><div class="tutorial-card-head"><span>'+ (index+1)+' / '+steps.length+' · '+chapters[step.chapter]+'</span><button type="button" class="tutorial-close" aria-label="튜토리얼 끝내기">×</button></div><progress aria-label="튜토리얼 진행" max="'+steps.length+'" value="'+(index+1)+'"></progress><div class="tutorial-chapters">'+chapters.map((c,k)=>'<button type="button" data-tour-chapter="'+k+'" aria-current="'+(step.chapter===k)+'">'+c+'</button>').join('')+'</div><h2 id="tutorialTitle" tabindex="-1">'+step.title+'</h2><p>'+step.body+'</p>'+(step.hint?'<p class="tutorial-hint">'+step.hint+'</p>':'')+(step.action?'<button type="button" class="tutorial-example">'+step.example+' ↗</button>':'')+'<p class="tutorial-feedback" role="status" hidden></p><div class="tutorial-actions"><button type="button" class="button secondary" id="tutorialPrev" '+(index===0?'disabled':'')+'>이전</button><button type="button" class="button primary" id="tutorialNext">'+(index===steps.length-1?'마무리 보기':'다음')+' →</button></div></section>';
+  function renderCard(step,move=null) {
+    if(!layer.querySelector('.tutorial-spotlight')){const spot=document.createElement('div');spot.className='tutorial-spotlight is-muted';spot.setAttribute('aria-hidden','true');layer.append(spot);}
+    layer.querySelector('.tutorial-card')?.remove();
+    const shell=document.createElement('div');shell.innerHTML=`<section class="tutorial-card is-arriving" role="region" aria-label="튜토리얼 안내">
+      <div class="tutorial-card-head"><span>${index+1} / ${steps.length} · ${chapters[step.chapter]}</span><button type="button" class="tutorial-close" aria-label="튜토리얼 끝내기">×</button></div>
+      <progress aria-label="튜토리얼 진행" max="${steps.length}" value="${index+1}"></progress>
+      <nav class="tutorial-location" aria-label="현재 안내 위치">${move?.done?'<b class="tutorial-moved">'+move.done+'</b>':''}${pathHTML(places[index])}</nav>
+      <div class="tutorial-chapters">${chapters.map((c,k)=>'<button type="button" data-tour-chapter="'+k+'" aria-current="'+(step.chapter===k)+'">'+c+'</button>').join('')}</div>
+      <div class="tutorial-content"><h2 id="tutorialTitle" tabindex="-1">${step.title}</h2><p>${step.body}</p>${step.hint?'<p class="tutorial-hint">'+step.hint+'</p>':''}${step.action?'<button type="button" class="tutorial-example">'+step.example+' ↗</button>':''}<p class="tutorial-feedback" role="status" hidden></p></div>
+      <div class="tutorial-actions"><button type="button" class="button secondary" id="tutorialPrev" ${index===0?'disabled':''}>이전</button><button type="button" class="button primary" id="tutorialNext">${index===steps.length-1?'마무리 보기':'다음'} →</button></div></section>`;
+    layer.append(shell.firstElementChild);
     layer.querySelector('.tutorial-close').onclick=()=>finish();
     q('#tutorialPrev').onclick=()=>showStep(index-1);q('#tutorialNext').onclick=()=>index===steps.length-1?showFinish():showStep(index+1);
     layer.querySelectorAll('[data-tour-chapter]').forEach(b=>b.onclick=()=>showStep(steps.findIndex(s=>s.chapter===+b.dataset.tourChapter)));
     if(step.action)layer.querySelector('.tutorial-example').onclick=async() => {
-      if(actionBusy)return;actionBusy=true;const button=layer.querySelector('.tutorial-example'),token=transition;button.disabled=true;
-      try{const message=await step.action();if(active&&token===transition){actionTarget=step.afterActionTarget||null;const feedback=layer.querySelector('.tutorial-feedback');feedback.hidden=false;feedback.textContent=message||'화면에서 결과를 확인하세요.';reposition(true);}}
+      if(actionBusy||moving)return;actionBusy=true;const button=layer.querySelector('.tutorial-example'),token=transition,oldSelector=actionTarget||step.target,oldRect=visibleTarget()?.getBoundingClientRect();button.disabled=true;
+      try{const message=await step.action();if(alive(token)){actionTarget=step.afterActionTarget||null;const feedback=layer.querySelector('.tutorial-feedback');feedback.hidden=false;feedback.textContent=message||'화면에서 결과를 확인하세요.';moving=true;if(await leaveGuide(token))await revealGuide(token,oldRect,true,oldSelector);}}
       catch(e){if(active&&token===transition){const feedback=layer.querySelector('.tutorial-feedback');feedback.hidden=false;feedback.textContent=e.message;}}
-      finally{if(token===transition)actionBusy=false;if(button.isConnected)button.disabled=false;}
+      finally{if(token===transition){moving=false;actionBusy=false;setBusy(false);}if(button.isConnected)button.disabled=false;}
     };
   }
   async function showStep(next) {
-    if(!active||moving||actionBusy)return;moving=true;actionTarget=null;const token=++transition;index=Math.max(0,Math.min(next,steps.length-1));
+    if(!active||moving||actionBusy)return;
+    const oldRect=visibleTarget()?.getBoundingClientRect(),oldSelector=actionTarget||steps[index]?.target,from=currentPlace;
+    moving=true;completion=false;actionTarget=null;const token=++transition;index=Math.max(0,Math.min(next,steps.length-1));
+    const destination=places[index],move=destinationMove(from,destination),same=surfaceKey(from)===surfaceKey(destination);
     try {
-      await steps[index].enter();if(!active||token!==transition)return;
-      host();renderCard(steps[index]);remember({lastStep:index});reposition(true);q('#tutorialTitle').focus({preventScroll:true});
+      if(!await leaveGuide(token,!same))return;
+      // Show the menu or tab being chosen before the screen behind it changes.
+      // An open drawer or dialog would cover the top menu, so it closes first.
+      phase('navigating');
+      if(from&&from.surface!=='page'&&['page','settings','method'].includes(move?.kind)){closeSurfaces();host();}
+      showJourney(move,destination);cueDestination(destination,move);
+      if(move&&!await pause(move.hold,token))return;
+      await steps[index].enter();if(!alive(token))return;
+      await nextFrame();if(!alive(token))return;
+      host();cueDestination(destination,move);currentPlace=destination;renderCard(steps[index],move);setBusy(true);
+      if(await revealGuide(token,oldRect,same,oldSelector))remember({lastStep:index});
     } catch(e) {
-      if(active&&token===transition){host();renderCard({...steps[index],body:'이 화면을 여는 중 문제가 생겼습니다. 다음 단계로 이동하거나 튜토리얼을 다시 시작할 수 있습니다.',hint:e.message,action:null});reposition();}
+      if(alive(token)){host();renderCard({...steps[index],body:'이 화면을 여는 중 문제가 생겼습니다. 다음 단계로 이동하거나 튜토리얼을 다시 시작할 수 있습니다.',hint:e.message,action:null});reposition();layer.querySelector('.tutorial-card').classList.remove('is-arriving');journey.hidden=true;clearCues();}
       console.warn('Tutorial step:',e);
-    } finally {if(token===transition)moving=false;}
+    } finally {if(token===transition){moving=false;setBusy(false);}}
   }
   function visibleTarget() {
     const candidates=document.querySelectorAll(actionTarget||steps[index]?.target||'.controls');
@@ -149,29 +308,61 @@
     if(drawerTarget)return drawerTarget;
     return [...candidates].find(el=>el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden')||null;
   }
-  function reposition(scroll=false) {
-    if(!active||!layer)return;host();const card=layer.querySelector('.tutorial-card'),spot=layer.querySelector('.tutorial-spotlight');if(!card||!spot)return;
+  // The part of an element actually on screen: a tall form inside a small scrolling pane is cut to that pane.
+  function shownRect(el) {
+    let {top,left,right,bottom}=el.getBoundingClientRect();
+    for(let parent=el.parentElement;parent&&parent!==document.body;parent=parent.parentElement){
+      const style=getComputedStyle(parent);if(style.overflowX==='visible'&&style.overflowY==='visible')continue;
+      const box=parent.getBoundingClientRect();
+      if(style.overflowY!=='visible'){top=Math.max(top,box.top);bottom=Math.min(bottom,box.bottom);}
+      if(style.overflowX!=='visible'){left=Math.max(left,box.left);right=Math.min(right,box.right);}
+    }
+    return {top,left,right,bottom,width:Math.max(0,right-left),height:Math.max(0,bottom-top)};
+  }
+  function positionSpot(r) {
+    const spot=layer?.querySelector('.tutorial-spotlight');if(!spot)return;
+    const vw=document.documentElement.clientWidth,vh=innerHeight,top=Math.max(38,r?.top-5),bottom=Math.min(vh-8,r?.bottom+5);
+    // Never leave a sliver of highlight at the screen edge for a target that is out of view.
+    spot.hidden=!r||bottom-top<12;if(spot.hidden)return;
+    Object.assign(spot.style,{top:top+'px',left:Math.max(4,r.left-5)+'px',width:Math.max(0,Math.min(vw-4,r.right+5)-Math.max(4,r.left-5))+'px',height:Math.max(0,bottom-top)+'px'});
+  }
+  function reposition() {
+    if(!active||!layer)return;host();const card=layer.querySelector('.tutorial-card'),spot=layer.querySelector('.tutorial-spotlight');if(!card)return;
     const target=visibleTarget(),mobile=window.innerWidth<=650,pad=12,vw=document.documentElement.clientWidth,vh=window.innerHeight;
     if(mobile)card.style.width=Math.max(0,vw-20)+'px';else card.style.width='';
-    if(target&&scroll){const alignStart=mobile||target.offsetHeight>vh*.6;target.scrollIntoView({block:alignStart?'start':'center',inline:'nearest',behavior:'instant'});if(alignStart&&!target.closest('dialog,#drawer'))window.scrollBy(0,-90);}
-    const r=target?.getBoundingClientRect();spot.hidden=!r;
-    if(r){const top=Math.max(38,r.top-5),bottom=Math.min(vh-8,r.bottom+5);Object.assign(spot.style,{top:top+'px',left:Math.max(4,r.left-5)+'px',width:Math.max(0,Math.min(vw-4,r.right+5)-Math.max(4,r.left-5))+'px',height:Math.max(0,bottom-top)+'px'});}
+    if(completion){Object.assign(card.style,{left:Math.max(10,(vw-card.offsetWidth)/2)+'px',top:Math.max(46,(vh-card.offsetHeight)/2)+'px'});return;}
+    if(!spot)return;
+    const r=target&&shownRect(target);
+    positionSpot(r);
     const w=card.offsetWidth||350,h=card.offsetHeight||320;
-    if(mobile){Object.assign(card.style,{left:'10px',top:Math.max(46,vh-h-10)+'px'});return;}
+    // Phones keep the card at the bottom unless the target sits there (end of a drawer, fixed save bar).
+    if(mobile){const low=Math.max(46,vh-h-10),hidden=y=>r?Math.max(0,Math.min(y+h,r.bottom)-Math.max(y,r.top)):0;Object.assign(card.style,{left:'10px',top:(hidden(46)<hidden(low)?46:low)+'px'});return;}
     let x=vw-w-20,y=vh-h-20;
     if(r){const candidates=[{x:r.right+18,y:r.top},{x:r.left-w-18,y:r.top},{x:r.left,y:r.bottom+18},{x:r.left,y:r.top-h-18}];
       const fit=candidates.find(p=>p.x>=pad&&p.x+w<=vw-pad&&p.y>=46&&p.y+h<=vh-pad);
-      if(fit){x=fit.x;y=fit.y;}else if(r.left>vw/2)x=20;
+      // Otherwise use the screen corner that hides the least of the highlighted area.
+      const hidden=p=>Math.max(0,Math.min(p.x+w,r.right)-Math.max(p.x,r.left))*Math.max(0,Math.min(p.y+h,r.bottom)-Math.max(p.y,r.top));
+      const corner=[{x:vw-w-20,y:vh-h-20},{x:20,y:vh-h-20},{x:vw-w-20,y:46},{x:20,y:46}].reduce((a,b)=>hidden(b)<hidden(a)?b:a);
+      ({x,y}=fit||corner);
     }
     Object.assign(card.style,{left:Math.max(pad,Math.min(x,vw-w-pad))+'px',top:Math.max(46,Math.min(y,vh-h-pad))+'px'});
   }
-  function showFinish() {
-    closeSurfaces();overview();host();
-    layer.innerHTML='<section class="tutorial-card" role="region" aria-label="튜토리얼 완료"><div class="tutorial-card-head"><span>전체 안내 완료</span><button class="tutorial-close" type="button" aria-label="튜토리얼 끝내기">×</button></div><h2 tabindex="-1" id="tutorialTitle">이제 직접 확인해 보세요</h2><p>매장과 날짜를 고르고, 조건을 바꿔 발주안을 비교해 보세요. 실제 주문은 초안을 확인한 뒤 별도로 진행합니다.</p><p class="tutorial-hint">연습 중 입력한 설정·행사·재고는 남기지 않습니다. 종료하면 튜토리얼을 시작하기 전 화면으로 돌아갑니다. 상단 사용 안내에서 언제든 다시 볼 수 있습니다.</p><div class="tutorial-finish-links">'+chapters.map((c,k)=>'<button type="button" data-tour-chapter="'+k+'">'+c+' 다시 보기</button>').join('')+'</div><div class="tutorial-actions"><button type="button" class="button primary" id="tutorialDone">마치고 원래 화면으로 →</button></div></section>';
+  async function showFinish() {
+    if(!active||moving||actionBusy)return;moving=true;const token=++transition;
+    if(!await leaveGuide(token,true))return;
+    const destination=place('overview',['안내 완료']),move={kind:currentPlace?.page==='overview'?'return':'page',now:'발주 신청 화면으로 돌아갑니다',hold:240};
+    phase('navigating');showJourney(move,destination);cueDestination(destination,move);
+    if(!await pause(move.hold,token))return;
+    overview();host();currentPlace=destination;
+    layer.innerHTML='<section class="tutorial-card is-arriving" role="region" aria-label="튜토리얼 완료"><div class="tutorial-card-head"><span>전체 안내 완료</span><button class="tutorial-close" type="button" aria-label="튜토리얼 끝내기">×</button></div><nav class="tutorial-location" aria-label="현재 안내 위치">'+pathHTML(destination)+'</nav><h2 tabindex="-1" id="tutorialTitle">이제 직접 확인해 보세요</h2><p>매장과 날짜를 고르고, 조건을 바꿔 발주안을 비교해 보세요. 실제 주문은 초안을 확인한 뒤 별도로 진행합니다.</p><p class="tutorial-hint">연습 중 입력한 설정·행사·재고는 남기지 않습니다. 종료하면 튜토리얼을 시작하기 전 화면으로 돌아갑니다. 상단 사용 안내에서 언제든 다시 볼 수 있습니다.</p><div class="tutorial-finish-links">'+chapters.map((c,k)=>'<button type="button" data-tour-chapter="'+k+'">'+c+' 다시 보기</button>').join('')+'</div><div class="tutorial-actions"><button type="button" class="button primary" id="tutorialDone">마치고 원래 화면으로 →</button></div></section>';
     layer.querySelector('.tutorial-close').onclick=()=>finish(true);q('#tutorialDone').onclick=()=>finish(true);
     layer.querySelectorAll('[data-tour-chapter]').forEach(b=>b.onclick=()=>showStep(steps.findIndex(s=>s.chapter===+b.dataset.tourChapter)));
-    const card=layer.querySelector('.tutorial-card');card.style.left=Math.max(10,(innerWidth-card.offsetWidth)/2)+'px';card.style.top=Math.max(50,(innerHeight-card.offsetHeight)/2)+'px';
+    completion=true;reposition();
+    if(!await scrollToTarget(q('.controls'),token,()=>{}))return;
+    if(!alive(token))return;
+    layer.querySelector('.tutorial-card').getBoundingClientRect();layer.querySelector('.tutorial-card').classList.remove('is-arriving');journey.hidden=true;clearCues();
     q('#tutorialTitle').focus({preventScroll:true});remember({completed:true});
+    await pause(160,token);if(alive(token)){moving=false;phase('complete');setBusy(false);}
   }
   function offer() {
     if(!available||active)return;
@@ -189,10 +380,14 @@
     q('.top-right').prepend(button);
     if(!readProgress().offered&&!document.querySelector('dialog[open]'))offer();
     const observer=new MutationObserver(records=>{
-      if(!active||moving||records.every(r=>r.target.closest?.('#tutorialLayer,.tutorial-practice')))return;
+      if(!active||moving||records.every(r=>r.target.closest?.('#tutorialLayer,.tutorial-practice,.tutorial-journey')))return;
       if(!frame)frame=requestAnimationFrame(()=>{frame=0;reposition();});
     });observer.observe(document.body,{subtree:true,childList:true});
-    window.addEventListener('resize',()=>reposition());document.addEventListener('scroll',()=>{if(active&&!frame)frame=requestAnimationFrame(()=>{frame=0;reposition();});},true);
+    window.addEventListener('resize',()=>{if(!moving)reposition();});document.addEventListener('scroll',()=>{if(active&&!moving&&!frame)frame=requestAnimationFrame(()=>{frame=0;reposition();});},true);
+    // Only people's input is held back; the tour's own scripted clicks (e.g. opening the policy view) must still run.
+    const blockDuringMove=e=>{if(active&&moving&&e.isTrusted&&!e.target.closest('.tutorial-practice button,.tutorial-close')){e.preventDefault();e.stopImmediatePropagation();}};
+    document.addEventListener('click',blockDuringMove,true);document.addEventListener('pointerdown',blockDuringMove,true);
+    document.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' ')blockDuringMove(e);},true);
     document.addEventListener('keydown',e=>{if(active&&e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();finish();}},true);
   }
   globalThis.DashboardTutorial={ready,offer};
