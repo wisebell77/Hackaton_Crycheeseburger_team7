@@ -16,10 +16,10 @@
 ## 바로 실행
 
 ```sh
-python -m http.server 8000 --directory web-dashboard/dist
+python3 web-dashboard/serve.py
 ```
 
-http://localhost:8000 → `초기 재고 9/30` → `발주 신청`. 원본 CSV나 Python 설치 없이 동작합니다.
+http://localhost:8000 에서 실행합니다. 기본 시작일은 9/30입니다. 자연어 해석은 Python 로컬 서버에서 실행되며 추가 패키지는 필요하지 않습니다. 설정과 이번 발주 요청은 [설정 안내](web-dashboard/SETTINGS.md)를 참고하세요.
 
 배포는 `web-dashboard/dist` 폴더 전체를 정적 호스팅에 게시하면 됩니다 (빌드 명령 없음, 시작 문서 `index.html`). 일일 기록과 행사 조건은 브라우저 localStorage 에만 저장됩니다.
 

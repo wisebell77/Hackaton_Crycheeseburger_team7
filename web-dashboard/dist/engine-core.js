@@ -150,7 +150,8 @@ function recommend(i, ctx, serviceLevel) {
   }
   const sg = sigmaFor(i, ctx, windowDays, scale), z = zValue(serviceLevel);
   const safety = z * sg.sigma, available = onHand - expiringExcluded;
-  const net = Math.max(0, demand - unmet + safety - available - inbound);
+  const extraBuffer = (ctx.extraDemandBufferRatio || 0) * demand;
+  const net = Math.max(0, demand - unmet + safety + extraBuffer - available - inbound);
   const raw = Math.ceil(round9(net / conv(i)));
   const qty = net > 0 ? Math.max(raw, Math.ceil(+i.min_order_qty || 0)) : 0;
   return {
@@ -158,7 +159,7 @@ function recommend(i, ctx, serviceLevel) {
     order_date: i.sc.order, arrival1: a1, arrival2: a2, window_start: wStart, window_end: addDays(a2, -1), window_days: windowDays,
     daily_requirement: daily, demand_window: demand, unmet_before_arrival1: unmet, need_before_arrival1: needBeforeA1,
     sigma_window: sg.sigma, sigma_daily: sg.daily, sigma_note: sg.note, shift: sg.shift, sigma_scale: scale,
-    safety_stock: safety, on_hand: onHand, n_lots: init.length, expiring_excluded: expiringExcluded,
+    extra_buffer: extraBuffer, safety_stock: safety, on_hand: onHand, n_lots: init.length, expiring_excluded: expiringExcluded,
     expiring_lots: expiring.map(l => ({ lastUse: l.lastUse, wasted: l.wasted })), available, inbound,
     inbound_lines: inb.map(l => ({ date: l.arrival, qty: l.qty0 })), net_need_use: net,
     min_order_qty: +i.min_order_qty, use_qty_per_order_unit: conv(i), unit_price: +i.price, amount: qty * +i.price,
@@ -296,13 +297,12 @@ function score(ev, preset) {
 }
 function minOrderIssues(items, qtyMap, ctx) {
   const by = {};
-  for (const i of items) { const q = +qtyMap[i.ingredient_id] || 0; if (q > 0) by[i.supplier_id] = (by[i.supplier_id] || 0) + q * +i.price; }
-  return Object.entries(by).map(([sid, amount]) => ({ supplier_id: sid, amount, minimum: +(ctx.supplierMap[sid]?.min_order_amount || 0) }))
-    .filter(x => x.amount > 0 && x.amount < x.minimum);
+  for (const i of items) { const q = +qtyMap[i.ingredient_id] || 0; if (q > 0) { const key=i.supplier_id+'|'+i.sc.order; by[key] ||= {supplier_id:i.supplier_id,order_date:i.sc.order,amount:0,minimum:+(ctx.supplierMap[i.supplier_id]?.min_order_amount||0)}; by[key].amount+=q*+i.price; } }
+  return Object.values(by).filter(x=>x.amount>0&&x.amount<x.minimum);
 }
 function topUp(items, qtyMap, issue) {                 // 소진량(포장단위) 큰 품목부터 1단위씩 돌아가며 최소금액까지 (명세 7절 규칙)
   const q = { ...qtyMap };
-  const cand = items.filter(i => i.supplier_id === issue.supplier_id && (q[i.ingredient_id] || 0) > 0 && +i.price > 0)
+  const cand = items.filter(i => i.supplier_id === issue.supplier_id && i.sc.order === issue.order_date && (q[i.ingredient_id] || 0) > 0 && +i.price > 0)
     .map(i => ({ i, daily: mean(i.forecast) / conv(i) }))
     .sort((a, b) => b.daily - a.daily || +b.i.price - +a.i.price);
   if (!cand.length) return null;
@@ -312,22 +312,22 @@ function topUp(items, qtyMap, issue) {                 // 소진량(포장단위
 }
 const planKey = q => Object.entries(q).filter(([, v]) => v > 0).sort().map(([k, v]) => k + ':' + v).join('|');
 
-function plan(items, ctx) {
-  const presets = P.presets, cache = new Map(), recs = {};
+function plan(items, ctx, options = {}) {
+  const presets = options.presets || P.presets, cache = new Map(), recs = {};
   const evalCached = q => { const k = planKey(q); if (!cache.has(k)) cache.set(k, evaluate(items, q, ctx)); return cache.get(k); };
   const zero = evalCached({});
   const out = { presets: {}, zero };
   for (const [key, pz] of Object.entries(presets)) {
     const sl = pz.service_level;
     recs[sl] ||= Object.fromEntries(items.map(i => [i.ingredient_id, recommend(i, ctx, sl)]));
-    const base = Object.fromEntries(items.map(i => [i.ingredient_id, recs[sl][i.ingredient_id].order_qty]));
+    const base = Object.fromEntries(items.map(i => [i.ingredient_id, (ctx.excludedIngredientIds || []).includes(i.ingredient_id) ? 0 : recs[sl][i.ingredient_id].order_qty]));
     const cands = [{ variant: '기본', qty: base, note: '' }];
     const issues = minOrderIssues(items, base, ctx);
     if (issues.length) {
       const post = { ...base };
       let up = { ...base }, upOk = true;
       for (const is of issues) {
-        for (const i of items) if (i.supplier_id === is.supplier_id) post[i.ingredient_id] = 0;
+        for (const i of items) if (i.supplier_id === is.supplier_id && i.sc.order === is.order_date) post[i.ingredient_id] = 0;
         const t = topUp(items, up, is); if (t) up = t; else upOk = false;
       }
       const desc = issues.map(x => `${ctx.supplierMap[x.supplier_id]?.supplier_name || x.supplier_id} ${Math.round(x.amount).toLocaleString('ko-KR')}원 < 최소 ${x.minimum.toLocaleString('ko-KR')}원`).join(', ');
